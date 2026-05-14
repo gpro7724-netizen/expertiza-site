@@ -6,23 +6,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Debug and fix
+      - name: Deploy
         run: |
           sudo apt-get install -y -qq sshpass
           export SSHPASS='19172024Mark'
           SSH="sshpass -e ssh -o StrictHostKeyChecking=no ubuntu@212.22.94.21"
           SCP="sshpass -e scp -o StrictHostKeyChecking=no"
           
-          echo "=== 1. Check file ==="
-          $SSH "ls -la /home/ubuntu/expertiza/"
+          $SSH "mkdir -p /home/ubuntu/expertiza"
+          $SCP index.html ubuntu@212.22.94.21:/home/ubuntu/expertiza/index.html
           
-          echo "=== 2. Check nginx config ==="
-          $SSH "cat /etc/nginx/sites-enabled/expertiza.conf"
-          
-          echo "=== 3. Fix nginx config ==="
-          $SSH 'sudo bash -c "cat > /etc/nginx/sites-enabled/expertiza.conf" << ENDNGINX
+          $SSH "sudo rm -f /etc/nginx/sites-enabled/expertiza.conf"
+          $SSH "sudo tee /etc/nginx/sites-enabled/expertiza.conf > /dev/null <<'NGCONF'
           server {
-              listen 8787;
+              listen 8383;
               server_name _;
               root /home/ubuntu/expertiza;
               index index.html;
@@ -30,24 +27,11 @@ jobs:
                   try_files \$uri \$uri/ =404;
               }
           }
-          ENDNGINX'
+          NGCONF"
           
-          echo "=== 4. Re-upload file ==="
-          $SCP index.html ubuntu@212.22.94.21:/home/ubuntu/expertiza/index.html
+          $SSH "sudo nginx -t && sudo systemctl reload nginx"
+          $SSH "sudo ufw allow 8383/tcp 2>/dev/null; sudo iptables -I INPUT -p tcp --dport 8383 -j ACCEPT 2>/dev/null"
           
-          echo "=== 5. Test nginx config ==="
-          $SSH "sudo nginx -t"
-          
-          echo "=== 6. Reload nginx ==="
-          $SSH "sudo systemctl reload nginx"
-          
-          echo "=== 7. Open firewall ==="
-          $SSH "sudo ufw allow 8787/tcp 2>/dev/null; sudo iptables -I INPUT -p tcp --dport 8787 -j ACCEPT 2>/dev/null; echo firewall done"
-          
-          echo "=== 8. Test locally ==="
-          $SSH "curl -sI http://localhost:8787/ | head -5"
-          
-          echo "=== 9. Test from outside ==="
-          curl -sI --connect-timeout 10 http://212.22.94.21:8787/ | head -5
-          
-          echo "=== DONE ==="
+          echo "=== Test ==="
+          $SSH "curl -sI http://localhost:8383/"
+          curl -sI --connect-timeout 10 http://212.22.94.21:8383/
